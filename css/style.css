@@ -171,3 +171,12 @@ input[type="file"] {
     text-align: center;
     margin-top: 10px;
 }
+
+#resetLocalStorageBtn {
+    background: #6b2e2e;
+}
+
+#resetLocalStorageBtn:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 #2a1e12;
+}
