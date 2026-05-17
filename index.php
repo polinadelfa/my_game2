@@ -22,7 +22,7 @@ $high_score = $_SESSION['high_score'];
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Машинка: обход препятствий</title>
+    <title>Машинка: обход препятствий - с сохранением рекорда</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -32,7 +32,8 @@ $high_score = $_SESSION['high_score'];
 
         <div class="info-panel">
             <div class="score-box">🏆 СЧЁТ: <span id="currentScore">0</span></div>
-            <div class="score-box">⭐ РЕКОРД: <span id="highScore"><?= $high_score ?></span></div>
+            <div class="score-box">⭐ РЕКОРД (сессия): <span id="highScore"><?= $high_score ?></span></div>
+            <div class="score-box">💾 РЕКОРД (браузер): <span id="localHighScore">0</span></div>
             <button class="restart-btn" id="restartButton">🚗 РЕСТАРТ</button>
         </div>
 
@@ -42,6 +43,7 @@ $high_score = $_SESSION['high_score'];
                 <input type="file" id="carImageInput" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp">
             </label>
             <button class="reset-car-btn" id="resetCarBtn">🔄 СТАНДАРТНАЯ</button>
+            <button class="reset-car-btn" id="resetLocalStorageBtn" style="background:#6b2e2e;">🗑️ СБРОСИТЬ РЕКОРД</button>
             <span style="color:#ffd966; font-size:12px;" id="carName">🚗 стандартная</span>
         </div>
 
