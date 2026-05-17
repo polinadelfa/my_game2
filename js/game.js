@@ -1,13 +1,16 @@
 (function(){
+    // ========== ПОЛУЧЕНИЕ ЭЛЕМЕНТОВ ==========
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     
+    // ========== ИГРОВЫЕ КОНСТАНТЫ ==========
     const LANE_COUNT = 3;
     const LANE_WIDTH = canvas.width / LANE_COUNT;
     let playerLane = 1;
     const CAR_WIDTH = 48;
     const CAR_HEIGHT = 52;
     
+    // ========== ПЕРЕМЕННЫЕ ИГРЫ ==========
     let obstacles = [];
     let frameCounter = 0;
     let spawnGap = 45;
@@ -17,19 +20,56 @@
     let gameOver = false;
     let animationId = null;
     
-    let highScore = parseInt(document.getElementById('highScore').innerText) || 0;
+    // ========== РЕКОРДЫ ==========
+    // Рекорд из PHP сессии (переданный с сервера)
+    let serverHighScore = parseInt(document.getElementById('highScore').innerText) || 0;
+    // Рекорд из localStorage (сохраняется в браузере навсегда)
+    let localHighScore = 0;
     
+    // Загружаем рекорд из localStorage при запуске
+    function loadLocalHighScore() {
+        const saved = localStorage.getItem('carGameHighScore');
+        if (saved !== null) {
+            localHighScore = parseInt(saved);
+            document.getElementById('localHighScore').innerText = localHighScore;
+        } else {
+            localHighScore = 0;
+            document.getElementById('localHighScore').innerText = '0';
+        }
+    }
+    
+    // Сохраняем рекорд в localStorage
+    function saveLocalHighScore(score) {
+        if (score > localHighScore) {
+            localHighScore = score;
+            localStorage.setItem('carGameHighScore', score);
+            document.getElementById('localHighScore').innerText = score;
+            return true; // Рекорд обновлён
+        }
+        return false;
+    }
+    
+    // Получаем максимальный рекорд (из двух источников)
+    function getMaxHighScore() {
+        return Math.max(serverHighScore, localHighScore);
+    }
+    
+    // ========== ЗАГРУЖЕННОЕ ИЗОБРАЖЕНИЕ ==========
     let customCarImage = null;
     let useCustomImage = false;
     
+    // ========== DOM ЭЛЕМЕНТЫ ==========
     const currentScoreSpan = document.getElementById('currentScore');
-    const highScoreSpan = document.getElementById('highScore');
+    const highScoreSpan = document.getElementById('highScore');      // Серверный рекорд
+    const localHighScoreSpan = document.getElementById('localHighScore');
     const gameStatusDiv = document.getElementById('gameStatus');
     const carNameSpan = document.getElementById('carName');
     
+    // ========== ОТПРАВКА РЕКОРДА НА СЕРВЕР (PHP) ==========
     function updateHighScoreOnServer(newScore) {
-        if (newScore <= highScore) return;
-        fetch('index.php', {
+        if (newScore <= serverHighScore) return Promise.resolve(false);
+        
+        return fetch('index.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: `score=${newScore}`
@@ -37,43 +77,87 @@
         .then(res => res.json())
         .then(data => {
             if (data.new_high) {
-                highScore = data.high_score;
-                highScoreSpan.innerText = highScore;
-                gameStatusDiv.innerText = '🔥 НОВЫЙ РЕКОРД! 🔥';
+                serverHighScore = data.high_score;
+                highScoreSpan.innerText = serverHighScore;
+                gameStatusDiv.innerText = '🔥 НОВЫЙ РЕКОРД СЕССИИ! 🔥';
                 setTimeout(() => {
                     if(!gameOver) gameStatusDiv.innerText = '⬅️ ➡️ управление / обходи блоки';
                 }, 1500);
+                return true;
             } else {
-                highScore = data.high_score;
-                highScoreSpan.innerText = highScore;
+                serverHighScore = data.high_score;
+                highScoreSpan.innerText = serverHighScore;
+                return false;
             }
         })
-        .catch(err => console.warn("Ошибка отправки рекорда", err));
+        .catch(err => {
+            console.warn("Ошибка отправки рекорда на сервер", err);
+            return false;
+        });
     }
     
-    function setScore(newScore) {
+    // ========== ОБНОВЛЕНИЕ СЧЁТА (с синхронизацией рекордов) ==========
+    async function setScore(newScore) {
         score = newScore;
         currentScoreSpan.innerText = score;
-        if (score > highScore) {
-            highScore = score;
-            highScoreSpan.innerText = highScore;
-            updateHighScoreOnServer(score);
+        
+        let maxScore = getMaxHighScore();
+        let anyRecordUpdated = false;
+        
+        // Проверяем и обновляем локальный рекорд (localStorage)
+        if (score > localHighScore) {
+            saveLocalHighScore(score);
+            anyRecordUpdated = true;
+            gameStatusDiv.innerText = '💾 НОВЫЙ ЛОКАЛЬНЫЙ РЕКОРД! Сохранён в браузере!';
+            setTimeout(() => {
+                if(!gameOver && gameStatusDiv.innerText.includes('ЛОКАЛЬНЫЙ')) 
+                    gameStatusDiv.innerText = '⬅️ ➡️ управление / обходи блоки';
+            }, 2000);
+        }
+        
+        // Проверяем и обновляем серверный рекорд
+        if (score > serverHighScore) {
+            await updateHighScoreOnServer(score);
+            anyRecordUpdated = true;
+        }
+        
+        // Если оба рекорда обновлены, показываем специальное сообщение
+        if (anyRecordUpdated && score > maxScore) {
+            gameStatusDiv.innerText = '🏆 ВСЕ РЕКОРДЫ ОБНОВЛЕНЫ! 🏆';
+            setTimeout(() => {
+                if(!gameOver) gameStatusDiv.innerText = '⬅️ ➡️ управление / обходи блоки';
+            }, 2000);
         }
     }
     
+    // ========== СБРОС ЛОКАЛЬНОГО РЕКОРДА ==========
+    function resetLocalHighScore() {
+        if (confirm('Вы уверены, что хотите сбросить локальный рекорд браузера?')) {
+            localStorage.removeItem('carGameHighScore');
+            localHighScore = 0;
+            document.getElementById('localHighScore').innerText = '0';
+            gameStatusDiv.innerText = '🗑️ Локальный рекорд сброшен!';
+            setTimeout(() => {
+                if(!gameOver) gameStatusDiv.innerText = '⬅️ ➡️ управление / обходи блоки';
+            }, 1500);
+        }
+    }
+    
+    // ========== ПЕРЕЗАПУСК ИГРЫ ==========
     function restartGame() {
         gameOver = false;
         playerLane = 1;
         obstacles = [];
         frameCounter = 0;
         currentSpeed = baseSpeed;
-        setScore(0);
+        setScore(0);  // Обратите внимание: setScore теперь асинхронный
         gameStatusDiv.innerText = '⬅️ ➡️ игра началась!';
         setTimeout(() => {
             if(!gameOver) gameStatusDiv.innerText = '⬅️ ➡️ управление / обходи блоки';
         }, 1200);
     }
     
+    // ========== СОЗДАНИЕ ПРЕПЯТСТВИЯ ==========
     function addObstacle() {
         const laneIndex = Math.floor(Math.random() * LANE_COUNT);
         const obsW = 44;
@@ -88,13 +172,16 @@
         });
     }
     
+    // ========== ОБНОВЛЕНИЕ ЛОГИКИ ИГРЫ ==========
     function updateGame() {
         if (gameOver) return;
         
-        for (let i=0; i<obstacles.length; i++) {
+        // Движение препятствий вниз
+        for (let i = 0; i < obstacles.length; i++) {
             obstacles[i].y += currentSpeed;
         }
         
+        // Удаление ушедших за экран и начисление очков
         obstacles = obstacles.filter(obs => {
             if (obs.y > canvas.height) {
                 setScore(score + 10);
@@ -103,6 +190,7 @@
             return true;
         });
         
+        // Спавн новых препятствий
         if (frameCounter >= spawnGap) {
             frameCounter = 0;
             addObstacle();
@@ -113,6 +201,7 @@
             frameCounter++;
         }
         
+        // Проверка столкновения
         const playerCarX = playerLane * LANE_WIDTH + (LANE_WIDTH/2) - CAR_WIDTH/2;
         const playerCarY = canvas.height - CAR_HEIGHT - 10;
         const carRect = {
@@ -140,12 +229,14 @@
         }
     }
     
+    // ========== ОТРИСОВКА ДОРОГИ ==========
     function drawRoad() {
         ctx.fillStyle = '#2c2e3a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
         ctx.strokeStyle = '#FFD966';
         ctx.lineWidth = 4;
-        for (let i=1; i<LANE_COUNT; i++) {
+        for (let i = 1; i < LANE_COUNT; i++) {
             ctx.beginPath();
             ctx.setLineDash([20, 30]);
             ctx.moveTo(i * LANE_WIDTH, 0);
@@ -153,16 +244,19 @@
             ctx.stroke();
         }
         ctx.setLineDash([]);
+        
         ctx.strokeStyle = '#b87c4f';
         ctx.lineWidth = 6;
         ctx.strokeRect(8, 8, canvas.width-16, canvas.height-16);
+        
         ctx.fillStyle = '#e0b074';
-        for(let i=0; i<10; i++) {
-            ctx.fillRect(10, i*45 + 15, 12, 25);
-            ctx.fillRect(canvas.width-22, i*45 + 15, 12, 25);
+        for(let i = 0; i < 10; i++) {
+            ctx.fillRect(10, i * 45 + 15, 12, 25);
+            ctx.fillRect(canvas.width-22, i * 45 + 15, 12, 25);
         }
     }
     
+    // ========== ОТРИСОВКА МАШИНКИ ==========
     function drawPlayer() {
         const x = playerLane * LANE_WIDTH + (LANE_WIDTH/2) - CAR_WIDTH/2;
         const y = canvas.height - CAR_HEIGHT - 10;
@@ -194,6 +288,7 @@
         }
     }
     
+    // ========== ОТРИСОВКА ПРЕПЯТСТВИЯ ==========
     function drawObstacle(obs) {
         ctx.fillStyle = '#6f4f37';
         ctx.beginPath();
@@ -208,6 +303,7 @@
         ctx.fillText("⚠", obs.x+14, obs.y+34);
     }
     
+    // ========== ЭКРАН GAME OVER ==========
     function drawGameOverlay() {
         if (gameOver) {
             ctx.fillStyle = 'rgba(0,0,0,0.75)';
@@ -221,6 +317,7 @@
         }
     }
     
+    // ========== ОТРИСОВКА ВСЕГО ==========
     function render() {
         drawRoad();
         for (let obs of obstacles) drawObstacle(obs);
@@ -228,6 +325,7 @@
         drawGameOverlay();
     }
     
+    // ========== ИГРОВОЙ ЦИКЛ ==========
     function gameLoop() {
         if (!gameOver) {
             updateGame();
@@ -236,6 +334,7 @@
         animationId = requestAnimationFrame(gameLoop);
     }
     
+    // ========== УПРАВЛЕНИЕ ==========
     function moveLeft() {
         if (gameOver) return;
         if (playerLane > 0) playerLane--;
@@ -246,6 +345,7 @@
         if (playerLane < LANE_COUNT-1) playerLane++;
     }
     
+    // ========== ЗАГРУЗКА ИЗОБРАЖЕНИЯ ==========
     function loadCarImage(file) {
         if (!file) return;
         
@@ -280,6 +380,7 @@
         reader.readAsDataURL(file);
     }
     
+    // ========== СБРОС К СТАНДАРТНОЙ МАШИНКЕ ==========
     function resetToDefaultCar() {
         useCustomImage = false;
         customCarImage = null;
@@ -290,6 +391,7 @@
         }, 1500);
     }
     
+    // ========== ОБРАБОТЧИКИ КЛАВИШ ==========
     function handleKeydown(e) {
         if (e.key === 'ArrowLeft') {
             e.preventDefault();
@@ -300,11 +402,13 @@
         }
     }
     
+    // ========== ИНИЦИАЛИЗАЦИЯ УПРАВЛЕНИЯ ==========
     function initControls() {
         window.addEventListener('keydown', handleKeydown);
         document.getElementById('leftBtn').addEventListener('click', () => moveLeft());
         document.getElementById('rightBtn').addEventListener('click', () => moveRight());
         document.getElementById('restartButton').addEventListener('click', () => restartGame());
+        document.getElementById('resetLocalStorageBtn').addEventListener('click', () => resetLocalHighScore());
         
         const carInput = document.getElementById('carImageInput');
         carInput.addEventListener('change', (e) => {
@@ -316,7 +420,7 @@
         
         document.getElementById('resetCarBtn').addEventListener('click', () => resetToDefaultCar());
         
-        const btns = document.querySelectorAll('.control-btn, .restart-btn, .reset-car-btn, .upload-label');
+        const btns = document.querySelectorAll('.control-btn, .restart-btn, .reset-car-btn, .upload-label, #resetLocalStorageBtn');
         btns.forEach(btn => {
             btn.addEventListener('touchstart', (e) => {
                 e.preventDefault();
@@ -324,10 +428,12 @@
                 if(btn.id === 'rightBtn') moveRight();
                 if(btn.id === 'restartButton') restartGame();
                 if(btn.id === 'resetCarBtn') resetToDefaultCar();
+                if(btn.id === 'resetLocalStorageBtn') resetLocalHighScore();
             });
         });
     }
     
+    // ========== ПОЛИФИЛ ДЛЯ roundRect ==========
     if (!CanvasRenderingContext2D.prototype.roundRect) {
         CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
             if (w < 2 * r) r = w / 2;
@@ -345,10 +451,12 @@
         };
     }
     
-    function startGame() {
-        restartGame();
-        initControls();
-        gameLoop();
+    // ========== ЗАПУСК ИГРЫ ==========
+    async function startGame() {
+        loadLocalHighScore();      // Загружаем рекорд из localStorage
+        restartGame();             // Инициализируем игру
+        initControls();            // Подключаем управление
+        gameLoop();                // Запускаем игровой цикл
     }
     
     startGame();
